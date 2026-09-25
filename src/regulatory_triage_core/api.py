@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .errors import DomainError, ValidationError
+from .orchestration import TriageService
 from .service import DomainService
 from .storage import Database
 
@@ -21,6 +22,8 @@ def route(service: DomainService, method: str, path: str, body: dict[str, Any] |
     body = body or {}
     parsed = urlparse(path)
     actor_id = headers.get("X-Actor-Id", "")
+    triage_service = TriageService(service.database, service.clock)
+    segments = [segment for segment in parsed.path.split("/") if segment]
     try:
         if method == "GET" and parsed.path == "/health":
             valid, count = service.verify_audit()
@@ -48,6 +51,36 @@ def route(service: DomainService, method: str, path: str, body: dict[str, Any] |
             query = parse_qs(parsed.query)
             after = int(query.get("after_sequence", ["0"])[0])
             return 200, {"items": service.audit_events(after)}
+
+        # ---- 风险优先级编排 ----
+        if method == "GET" and parsed.path == "/rules":
+            return 200, triage_service.current_rules()
+        if method == "POST" and parsed.path == "/rules/adjust":
+            receipt = triage_service.adjust_rules(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/plans/generate":
+            receipt = triage_service.generate_plan(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "GET" and parsed.path == "/plans":
+            query = parse_qs(parsed.query)
+            plan_date = query.get("plan_date", [None])[0]
+            return 200, {"items": triage_service.list_plans(actor_id=actor_id, plan_date=plan_date)}
+        # /plans/{plan_id} 与 /plans/{plan_id}/sites/{site_id}/explain
+        if method == "GET" and len(segments) == 2 and segments[0] == "plans":
+            return 200, triage_service.get_plan(actor_id=actor_id, plan_id=segments[1])
+        if method == "GET" and len(segments) == 5 and segments[0] == "plans" \
+                and segments[2] == "sites" and segments[4] == "explain":
+            return 200, triage_service.explain_site(actor_id=actor_id, plan_id=segments[1],
+                                                    site_id=segments[3])
+        if method == "POST" and parsed.path == "/slots/lock":
+            receipt = triage_service.lock_slot(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/slots/release":
+            receipt = triage_service.release_slot(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
+        if method == "POST" and parsed.path == "/slots/reassign":
+            receipt = triage_service.reassign_slot(actor_id=actor_id, **body)
+            return 200 if receipt.replayed else 201, receipt.__dict__
         return 404, {"error": "route_not_found", "message": "接口不存在"}
     except DomainError as exc:
         return exc.status, {"error": exc.code, "message": str(exc)}
