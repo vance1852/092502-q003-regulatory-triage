@@ -4,7 +4,10 @@ ALLOWED_CATEGORIES = frozenset([
     "district_profile",
     "risk_profile",
     "officer_roster",
-    "assistance_record"
+    "assistance_record",
+    "self_check_report",
+    "hazard_record",
+    "facility_alert"
 ])
 
 

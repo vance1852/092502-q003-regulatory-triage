@@ -37,6 +37,7 @@ class DomainRecord:
     category: str
     external_key: str
     payload: dict[str, Any]
+    payload_hash: str
     created_by: str
     created_at: str
 

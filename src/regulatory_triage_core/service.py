@@ -16,7 +16,7 @@ from .storage import Database
 
 
 IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{1,63}$")
-ROLES = frozenset({"admin", "operator", "reviewer", "auditor"})
+ROLES = frozenset({"admin", "operator", "reviewer", "auditor", "dispatcher"})
 
 
 class DomainService:
@@ -225,7 +225,7 @@ class DomainService:
         for row in self.database.connection.execute(query, parameters):
             records.append(DomainRecord(row["record_id"], row["site_id"], row["category"],
                                         row["external_key"], json.loads(row["payload_json"]),
-                                        row["created_by"], row["created_at"]))
+                                        row["payload_hash"], row["created_by"], row["created_at"]))
         return records
 
     def audit_events(self, after_sequence: int = 0) -> list[dict[str, Any]]:
